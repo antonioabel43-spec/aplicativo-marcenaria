@@ -1,0 +1,1 @@
+// Arquivo desativado para evitar conflito de modelos de IA
