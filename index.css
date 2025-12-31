@@ -3,15 +3,13 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: #041c32;
+.print-block {
+  display: none;
 }
 
 ::-webkit-scrollbar {
-  width: 5px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -27,13 +25,9 @@ body {
   background: #d4af37;
 }
 
-/* Transição suave para todos os elementos */
-* {
-  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
-  transition-duration: 200ms;
-}
-
-input:focus {
-  border-color: #be841c !important;
-  box-shadow: 0 0 10px rgba(190, 132, 28, 0.1);
+@media print {
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

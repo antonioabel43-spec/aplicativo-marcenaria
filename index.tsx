@@ -6,356 +6,513 @@ import {
   Plus, 
   Trash2, 
   Settings, 
-  Wand2, 
-  FileText, 
   Package,
   Home,
-  Users,
-  Copy,
-  Check,
-  X,
-  Download,
-  Smartphone
+  User,
+  Layers,
+  // Fix: Tool does not exist in lucide-react, using Wrench instead
+  Wrench,
+  PlusSquare,
+  Printer,
+  FileText,
+  Smartphone,
+  CheckCircle2
 } from 'lucide-react';
-import { BudgetSettings, FurnitureItem } from './types';
+import { BudgetSettings, FurnitureItem, ExtraItem, ClientData } from './types';
 
-// Inicializa a IA com o modelo gratuito (Flash)
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Inicialização segura para evitar erro de "process is not defined" em celulares
+const getApiKey = () => {
+  try {
+    return process.env.API_KEY || "";
+  } catch (e) {
+    return "";
+  }
+};
 
 const initialSettings: BudgetSettings = {
-  mdfSheetPrice: 280,
-  edgeTapePricePerMeter: 1.5,
+  mdfWhitePrice: 210,
+  mdfColorPrice: 295,
+  edge22Price: 1.6,
+  edge35Price: 3.2,
+  back3Price: 88,
+  back6Price: 115,
+  hingePrice: 9.5,
+  slidePrice: 48,
+  slidingKitPrice: 195,
+  casterPrice: 18,
+  rodPrice: 42,
   laborPercentage: 40,
   profitMargin: 30
 };
 
+const initialClient: ClientData = {
+  name: '',
+  phone: '',
+  address: '',
+  date: new Date().toLocaleDateString('pt-BR'),
+  projectTitle: ''
+};
+
 const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'client' | 'prices' | 'project' | 'extras'>('project');
   const [settings, setSettings] = useState<BudgetSettings>(() => {
-    const saved = localStorage.getItem('irmaos_silva_settings');
+    const saved = localStorage.getItem('is_settings_v4');
     return saved ? JSON.parse(saved) : initialSettings;
   });
   
-  const [items, setItems] = useState<FurnitureItem[]>(() => {
-    const saved = localStorage.getItem('irmaos_silva_items');
-    return saved ? JSON.parse(saved) : [
-      {
-        id: '1',
-        description: 'Móvel de Exemplo',
-        quantity: 1,
-        mdfSheetsNeeded: 1,
-        hardwareCost: 50,
-        edgeTapeMeters: 10,
-        extraCosts: 0
-      }
-    ];
+  const [client, setClient] = useState<ClientData>(() => {
+    const saved = localStorage.getItem('is_client_v4');
+    return saved ? JSON.parse(saved) : initialClient;
   });
 
-  const [aiInput, setAiInput] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiResponse, setAiResponse] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [showSyncModal, setShowSyncModal] = useState(false);
-  const [importData, setImportData] = useState('');
+  const [items, setItems] = useState<FurnitureItem[]>(() => {
+    const saved = localStorage.getItem('is_items_v4');
+    return saved ? JSON.parse(saved) : [];
+  });
 
-  // Auto-save
+  const [extras, setExtras] = useState<ExtraItem[]>(() => {
+    const saved = localStorage.getItem('is_extras_v4');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Salvar automaticamente no navegador
   useEffect(() => {
-    localStorage.setItem('irmaos_silva_settings', JSON.stringify(settings));
-    localStorage.setItem('irmaos_silva_items', JSON.stringify(items));
-  }, [settings, items]);
+    localStorage.setItem('is_settings_v4', JSON.stringify(settings));
+    localStorage.setItem('is_items_v4', JSON.stringify(items));
+    localStorage.setItem('is_extras_v4', JSON.stringify(extras));
+    localStorage.setItem('is_client_v4', JSON.stringify(client));
+  }, [settings, items, extras, client]);
 
   const addItem = () => {
-    const newItem: FurnitureItem = {
+    setItems([...items, {
       id: Date.now().toString(),
       description: '',
       quantity: 1,
-      mdfSheetsNeeded: 0,
-      hardwareCost: 0,
-      edgeTapeMeters: 0,
-      extraCosts: 0
-    };
-    setItems([...items, newItem]);
+      mdfType: 'white',
+      mdfSheets: 0,
+      edgeType: '22mm',
+      edgeMeters: 0,
+      backType: '3mm',
+      backSheets: 0,
+      hinges: 0,
+      slides: 0
+    }]);
   };
 
-  const removeItem = (id: string) => {
-    if (confirm("Remover este item do orçamento?")) {
-      setItems(items.filter(item => item.id !== id));
-    }
+  const addExtra = () => {
+    setExtras([...extras, {
+      id: Date.now().toString(),
+      description: '',
+      price: 0,
+      quantity: 1
+    }]);
   };
 
   const updateItem = (id: string, field: keyof FurnitureItem, value: any) => {
-    setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
-  };
-
-  const exportAllData = () => {
-    const data = JSON.stringify({ settings, items });
-    navigator.clipboard.writeText(data);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
-  };
-
-  const handleImport = () => {
-    try {
-      const parsed = JSON.parse(importData);
-      if (parsed.settings && parsed.items) {
-        setSettings(parsed.settings);
-        setItems(parsed.items);
-        setShowSyncModal(false);
-        setImportData('');
-        alert("Dados carregados com sucesso!");
-      }
-    } catch (e) {
-      alert("Código inválido.");
-    }
+    setItems(items.map(i => i.id === id ? { ...i, [field]: value } : i));
   };
 
   const totals = useMemo(() => {
     let materialCost = 0;
+    
     items.forEach(item => {
-      const itemMdf = item.mdfSheetsNeeded * settings.mdfSheetPrice;
-      const itemTape = item.edgeTapeMeters * settings.edgeTapePricePerMeter;
-      const itemBaseCost = (itemMdf + itemTape + item.hardwareCost + item.extraCosts) * item.quantity;
-      materialCost += itemBaseCost;
+      const mdfCost = item.mdfSheets * (item.mdfType === 'white' ? settings.mdfWhitePrice : settings.mdfColorPrice);
+      const edgeCost = item.edgeMeters * (item.edgeType === '22mm' ? settings.edge22Price : settings.edge35Price);
+      const backCost = item.backSheets * (item.backType === '3mm' ? settings.back3Price : (item.backType === '6mm' ? settings.back6Price : 0));
+      const hardwareCost = (item.hinges * settings.hingePrice) + (item.slides * settings.slidePrice);
+      
+      materialCost += (mdfCost + edgeCost + backCost + hardwareCost) * item.quantity;
     });
-    const laborCost = materialCost * (settings.laborPercentage / 100);
-    const totalCost = materialCost + laborCost;
-    const profit = totalCost * (settings.profitMargin / 100);
-    const suggestedPrice = totalCost + profit;
-    return { materialCost, laborCost, totalCost, suggestedPrice, profit };
-  }, [items, settings]);
 
-  const askAiEstimator = async () => {
-    if (!aiInput.trim()) return;
-    setAiLoading(true);
-    setAiResponse(null);
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview', // Modelo que não exige Paid API Key no Veo
-        contents: `Como consultor técnico da Irmãos Silva Planejados, estime os materiais necessários (chapas MDF, fita de borda, ferragens) para: "${aiInput}". Seja prático e profissional para marceneiros.`,
-      });
-      setAiResponse(response.text);
-    } catch (error) {
-      setAiResponse("O assistente está ocupado no momento. Tente novamente em breve.");
-    } finally {
-      setAiLoading(false);
-    }
+    const extrasTotal = extras.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
+    const laborValue = materialCost * (settings.laborPercentage / 100);
+    const subtotal = materialCost + laborValue;
+    const profitValue = subtotal * (settings.profitMargin / 100);
+    const finalTotal = subtotal + profitValue + extrasTotal;
+
+    return { materialCost, laborValue, profitValue, extrasTotal, finalTotal };
+  }, [items, extras, settings]);
+
+  const handlePrint = () => {
+    window.print();
   };
 
   return (
-    <div className="min-h-screen bg-[#041c32] text-gray-100 font-sans p-4 md:p-8 pb-32">
-      {/* Header Profissional */}
-      <header className="max-w-6xl mx-auto mb-8 flex flex-col items-center text-center gap-4 relative">
-        <div className="absolute right-0 top-0 flex gap-2 no-print">
-          <button 
-            onClick={() => setShowSyncModal(true)}
-            className="p-3 bg-[#0a2e4d] rounded-2xl border border-[#be841c]/30 text-[#be841c] hover:bg-[#be841c] hover:text-[#041c32] transition-all flex items-center gap-2 shadow-lg active:scale-95"
-          >
-            <Smartphone size={20} />
-            <span className="hidden md:inline text-xs font-bold uppercase tracking-wider">Acessar no Celular</span>
-          </button>
-        </div>
-
-        <div className="flex flex-col items-center mt-6">
-          <div className="relative mb-3">
-            <Home size={64} className="text-[#be841c]" />
-            <div className="absolute -bottom-2 -right-2 bg-[#041c32] p-1">
-               <Users size={32} className="text-[#be841c]" />
-            </div>
-          </div>
-          <h1 className="text-4xl md:text-5xl font-serif font-bold tracking-tight text-white uppercase">
-            Irmãos Silva <span className="text-[#be841c]">Planejados</span>
-          </h1>
-          <p className="text-[#be841c]/70 text-sm tracking-[0.2em] uppercase font-light mt-1">Orçamentos e Materiais</p>
-        </div>
-      </header>
-
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Painel de Custos */}
-        <section className="lg:col-span-4 space-y-6 no-print">
-          <div className="bg-[#062642] p-6 rounded-[2rem] border border-[#be841c]/20 shadow-2xl">
-            <h2 className="text-sm font-bold mb-6 flex items-center gap-2 text-[#be841c] uppercase tracking-widest">
-              <Settings size={18} /> Tabela de Preços
-            </h2>
-            <div className="space-y-5">
-              {[
-                { label: 'Valor Chapa MDF (R$)', key: 'mdfSheetPrice' },
-                { label: 'Fita de Borda (R$/m)', key: 'edgeTapePricePerMeter' },
-                { label: 'Mão de Obra (%)', key: 'laborPercentage' },
-                { label: 'Margem Lucro (%)', key: 'profitMargin' }
-              ].map(f => (
-                <div key={f.key}>
-                  <label className="text-[10px] text-gray-400 block mb-1.5 uppercase tracking-widest font-semibold">{f.label}</label>
-                  <input 
-                    type="number" 
-                    value={(settings as any)[f.key]}
-                    onChange={(e) => setSettings({...settings, [f.key]: Number(e.target.value)})}
-                    className="w-full bg-[#041c32] border border-[#be841c]/20 rounded-xl px-4 py-4 focus:ring-1 focus:ring-[#be841c] outline-none text-white font-medium text-lg"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-[#062642] p-6 rounded-[2rem] border border-[#be841c]/20 shadow-2xl">
-            <h2 className="text-sm font-bold mb-6 flex items-center gap-2 text-[#be841c] uppercase tracking-widest">
-              <Wand2 size={18} /> Consultor Silva (IA)
-            </h2>
-            <div className="space-y-4">
-              <textarea 
-                placeholder="Ex: Armário de quarto 2,5m com maleiro..."
-                className="w-full bg-[#041c32] border border-[#be841c]/20 rounded-xl px-4 py-4 text-base h-32 outline-none focus:ring-1 focus:ring-[#be841c] text-white resize-none"
-                value={aiInput}
-                onChange={(e) => setAiInput(e.target.value)}
-              />
-              <button 
-                onClick={askAiEstimator}
-                disabled={aiLoading}
-                className="w-full py-4 bg-[#be841c] text-[#041c32] rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 disabled:opacity-50"
-              >
-                {aiLoading ? "Consultando..." : "Estimar Materiais"}
-              </button>
-              {aiResponse && (
-                <div className="mt-4 p-5 bg-[#041c32]/80 border border-[#be841c]/30 rounded-xl text-xs leading-relaxed text-gray-200 italic shadow-inner">
-                  {aiResponse}
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* Tabela de Orçamento */}
-        <section className="lg:col-span-8 space-y-6">
-          <div className="bg-[#062642] rounded-[2rem] border border-[#be841c]/10 shadow-2xl overflow-hidden">
-            <div className="p-6 border-b border-[#be841c]/10 flex justify-between items-center bg-[#082d4f]/50">
-              <h2 className="text-md font-bold text-white uppercase tracking-wider flex items-center gap-3">
-                <Package size={22} className="text-[#be841c]" /> Itens do Projeto
-              </h2>
-              <button onClick={addItem} className="bg-[#be841c] hover:bg-[#d4af37] text-[#041c32] px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg flex items-center gap-2">
-                <Plus size={18} /> Adicionar Módulo
-              </button>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="bg-[#041c32] text-[#be841c] text-[10px] uppercase tracking-[0.2em] border-b border-[#be841c]/10">
-                    <th className="px-6 py-5 min-w-[180px]">Módulo</th>
-                    <th className="px-6 py-5">Qtd</th>
-                    <th className="px-6 py-5">Chapas</th>
-                    <th className="px-6 py-5">Fita(m)</th>
-                    <th className="px-6 py-5 text-right">Subtotal</th>
-                    <th className="px-6 py-5 no-print w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#be841c]/5">
-                  {items.map((item) => {
-                    const subtotal = ((item.mdfSheetsNeeded * settings.mdfSheetPrice) + (item.edgeTapeMeters * settings.edgeTapePricePerMeter) + item.hardwareCost + item.extraCosts) * item.quantity;
-                    return (
-                      <tr key={item.id} className="hover:bg-[#082d4f]/30 transition-colors">
-                        <td className="px-6 py-5">
-                          <input type="text" value={item.description} onChange={(e) => updateItem(item.id, 'description', e.target.value)} className="bg-transparent border-none outline-none w-full text-base font-medium text-white" placeholder="Ex: Roupeiro..." />
-                        </td>
-                        <td className="px-6 py-5">
-                          <input type="number" value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', Number(e.target.value))} className="bg-transparent border-none outline-none w-10 text-base text-gray-300 font-bold" />
-                        </td>
-                        <td className="px-6 py-5">
-                          <input type="number" step="0.1" value={item.mdfSheetsNeeded} onChange={(e) => updateItem(item.id, 'mdfSheetsNeeded', Number(e.target.value))} className="bg-transparent border-none outline-none w-12 text-base text-gray-300" />
-                        </td>
-                        <td className="px-6 py-5">
-                          <input type="number" value={item.edgeTapeMeters} onChange={(e) => updateItem(item.id, 'edgeTapeMeters', Number(e.target.value))} className="bg-transparent border-none outline-none w-12 text-base text-gray-300" />
-                        </td>
-                        <td className="px-6 py-5 text-right font-black text-white text-lg">
-                          R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-6 py-5 no-print">
-                          <button onClick={() => removeItem(item.id)} className="text-gray-600 hover:text-red-400 p-2 transition-transform active:scale-90"><Trash2 size={20} /></button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {items.length === 0 && <div className="p-12 text-center text-gray-600 italic">Nenhum item adicionado ao orçamento.</div>}
-            </div>
-          </div>
-
-          {/* Totais do Orçamento */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-[#062642] p-5 rounded-3xl border border-[#be841c]/10 shadow-lg text-center">
-              <span className="text-[9px] text-[#be841c] block uppercase tracking-widest font-bold mb-1">Total Materiais</span>
-              <div className="text-xl font-bold text-white">R$ {totals.materialCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
-            </div>
-            <div className="bg-[#062642] p-5 rounded-3xl border border-[#be841c]/10 shadow-lg text-center">
-              <span className="text-[9px] text-[#be841c] block uppercase tracking-widest font-bold mb-1">Mão de Obra</span>
-              <div className="text-xl font-bold text-white">R$ {totals.laborCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
-            </div>
-            <div className="bg-[#062642] p-5 rounded-3xl border border-[#be841c]/10 shadow-lg text-center">
-              <span className="text-[9px] text-[#be841c] block uppercase tracking-widest font-bold mb-1">Lucro Previsto</span>
-              <div className="text-xl font-bold text-white">R$ {totals.profit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
-            </div>
-            <div className="bg-gradient-to-br from-[#be841c] to-[#d4af37] p-6 rounded-3xl shadow-2xl scale-105 border-2 border-white/10 text-center">
-              <span className="text-[10px] text-[#041c32] block uppercase tracking-widest font-black mb-1">Total Sugerido</span>
-              <div className="text-2xl font-black text-[#041c32]">R$ {totals.suggestedPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+    <div className="min-h-screen bg-[#041c32] text-gray-100 font-sans pb-40">
+      {/* NAVEGAÇÃO SUPERIOR - Oculta ao imprimir */}
+      <header className="bg-[#062642] border-b border-[#be841c]/30 p-4 md:p-6 no-print sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-3">
+            <Home size={32} className="text-[#be841c]" />
+            <div>
+              <h1 className="text-xl md:text-2xl font-serif font-black text-white uppercase tracking-tight">Irmãos Silva <span className="text-[#be841c]">Planejados</span></h1>
             </div>
           </div>
           
-          <div className="flex justify-center no-print">
-            <button onClick={() => window.print()} className="flex items-center gap-2 px-8 py-4 bg-[#0a2e4d] border border-[#be841c]/40 text-[#be841c] rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-[#be841c] hover:text-[#041c32] transition-all shadow-xl">
-              <FileText size={18} /> Gerar PDF do Orçamento
-            </button>
-          </div>
-        </section>
-      </div>
+          <nav className="flex gap-1 bg-[#041c32] p-1 rounded-2xl overflow-x-auto w-full">
+            {[
+              { id: 'client', label: 'Dados Cliente', icon: User },
+              { id: 'prices', label: 'Preços Materiais', icon: Settings },
+              { id: 'project', label: 'Módulos/Móveis', icon: Package },
+              { id: 'extras', label: 'Itens Extras', icon: PlusSquare },
+            ].map(tab => (
+              <button 
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-[#be841c] text-[#041c32]' : 'text-gray-400 hover:text-white'}`}
+              >
+                <tab.icon size={14} /> {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </header>
 
-      {/* Modal de Sincronização Mobile */}
-      {showSyncModal && (
-        <div className="fixed inset-0 bg-[#041c32]/95 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-300">
-          <div className="bg-[#062642] p-8 rounded-[3rem] border-2 border-[#be841c] max-w-lg w-full text-center relative shadow-[0_0_50px_rgba(190,132,28,0.2)]">
-            <button onClick={() => setShowSyncModal(false)} className="absolute top-8 right-8 text-gray-400 hover:text-white"><X size={28} /></button>
-            <Smartphone size={48} className="text-[#be841c] mx-auto mb-4" />
-            <h3 className="text-[#be841c] font-serif text-3xl mb-6 uppercase tracking-tight">Sincronizar com Celular</h3>
-            
-            <div className="space-y-6">
-              <div className="bg-[#041c32] p-6 rounded-3xl border border-[#be841c]/20">
-                <p className="text-gray-400 text-xs mb-4 uppercase tracking-widest font-bold">1. Abrir o App no Celular</p>
-                <div className="bg-white p-4 rounded-2xl w-fit mx-auto mb-4 shadow-xl">
-                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(window.location.href)}&color=041c32`} className="w-32 h-32" alt="QR Code" />
-                </div>
-                <p className="text-[10px] text-gray-500 italic">Aponte a câmera para abrir o sistema no telefone.</p>
+      <main className="max-w-6xl mx-auto p-4 md:p-8 no-print">
+        {/* ABA DADOS DO CLIENTE */}
+        {activeTab === 'client' && (
+          <div className="bg-[#062642] p-8 rounded-[2rem] border border-[#be841c]/20 shadow-2xl animate-in fade-in duration-300">
+            <h2 className="text-[#be841c] font-black uppercase tracking-widest text-sm mb-8 flex items-center gap-3">
+              <User size={20} /> Identificação do Orçamento
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-2">
+                <label className="text-[10px] text-gray-400 uppercase font-bold tracking-widest ml-2">Título do Orçamento</label>
+                <input type="text" value={client.projectTitle} onChange={e => setClient({...client, projectTitle: e.target.value})} className="w-full bg-[#041c32] border border-[#be841c]/20 rounded-2xl p-4 text-white outline-none focus:border-[#be841c]" placeholder="Ex: Cozinha e Área de Serviço" />
               </div>
-
-              <div className="bg-[#041c32] p-6 rounded-3xl border border-[#be841c]/20 text-left">
-                <p className="text-gray-400 text-xs mb-4 uppercase tracking-widest font-bold text-center">2. Transferir Dados Digitados</p>
-                <button onClick={exportAllData} className="w-full py-4 bg-[#be841c] text-[#041c32] rounded-xl font-black text-[10px] uppercase flex items-center justify-center gap-3 mb-4 transition-all active:scale-95 shadow-lg">
-                  {copied ? <Check size={18} /> : <Download size={18} />}
-                  {copied ? "Código de Dados Copiado!" : "Gerar Código de Sincronização"}
-                </button>
-                <textarea value={importData} onChange={(e) => setImportData(e.target.value)} placeholder="Cole o código recebido aqui..." className="w-full bg-[#062642] border border-[#be841c]/20 rounded-xl p-4 text-[10px] h-20 mb-3 text-white font-mono outline-none focus:border-[#be841c]" />
-                <button onClick={handleImport} className="w-full py-3 bg-transparent border-2 border-[#be841c] text-[#be841c] rounded-xl font-black text-[10px] uppercase hover:bg-[#be841c] hover:text-[#041c32] transition-all">Sincronizar Agora</button>
+              <div className="space-y-2">
+                <label className="text-[10px] text-gray-400 uppercase font-bold tracking-widest ml-2">Nome do Cliente</label>
+                <input type="text" value={client.name} onChange={e => setClient({...client, name: e.target.value})} className="w-full bg-[#041c32] border border-[#be841c]/20 rounded-2xl p-4 text-white outline-none" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] text-gray-400 uppercase font-bold tracking-widest ml-2">Telefone</label>
+                <input type="text" value={client.phone} onChange={e => setClient({...client, phone: e.target.value})} className="w-full bg-[#041c32] border border-[#be841c]/20 rounded-2xl p-4 text-white outline-none" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] text-gray-400 uppercase font-bold tracking-widest ml-2">Endereço da Obra</label>
+                <input type="text" value={client.address} onChange={e => setClient({...client, address: e.target.value})} className="w-full bg-[#041c32] border border-[#be841c]/20 rounded-2xl p-4 text-white outline-none" />
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <footer className="max-w-6xl mx-auto mt-20 pt-8 border-t border-[#be841c]/10 text-center text-gray-500 text-[10px] uppercase tracking-[0.4em] no-print">
-        Irmãos Silva Planejados &copy; {new Date().getFullYear()} - Sistema de Gestão Interna
+        {/* ABA TABELA DE PREÇOS MATERIAIS */}
+        {activeTab === 'prices' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
+            <div className="bg-[#062642] p-6 rounded-[2rem] border border-[#be841c]/20">
+              <h3 className="text-[#be841c] font-black text-[10px] uppercase mb-6 flex items-center gap-2 tracking-widest"><Layers size={16}/> MDF e Fundo</h3>
+              <div className="space-y-4">
+                {[
+                  { label: 'MDF Branco TX (Chapa)', key: 'mdfWhitePrice' },
+                  { label: 'MDF Cores/Amadeirado (Chapa)', key: 'mdfColorPrice' },
+                  { label: 'Fundo 3mm (Chapa)', key: 'back3Price' },
+                  { label: 'Fundo 6mm (Chapa)', key: 'back6Price' },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label className="text-[8px] text-gray-500 uppercase block mb-1 font-black">{f.label}</label>
+                    <input type="number" value={(settings as any)[f.key]} onChange={e => setSettings({...settings, [f.key]: Number(e.target.value)})} className="w-full bg-[#041c32] border border-[#be841c]/10 rounded-xl p-3 text-sm text-white outline-none" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-[#062642] p-6 rounded-[2rem] border border-[#be841c]/20">
+              {/* Fix: Replaced non-existent Tool icon with Wrench */}
+              <h3 className="text-[#be841c] font-black text-[10px] uppercase mb-6 flex items-center gap-2 tracking-widest"><Wrench size={16}/> Ferragens e Acessórios</h3>
+              <div className="space-y-4">
+                {[
+                  { label: 'Dobradiça (Par)', key: 'hingePrice' },
+                  { label: 'Corrediça (Par)', key: 'slidePrice' },
+                  { label: 'Kit Porta Correr', key: 'slidingKitPrice' },
+                  { label: 'Rodízio (Unid)', key: 'casterPrice' },
+                  { label: 'Cabideiro (Metro)', key: 'rodPrice' },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label className="text-[8px] text-gray-500 uppercase block mb-1 font-black">{f.label}</label>
+                    <input type="number" value={(settings as any)[f.key]} onChange={e => setSettings({...settings, [f.key]: Number(e.target.value)})} className="w-full bg-[#041c32] border border-[#be841c]/10 rounded-xl p-3 text-sm text-white outline-none" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-[#062642] p-6 rounded-[2rem] border border-[#be841c]/20">
+              <h3 className="text-[#be841c] font-black text-[10px] uppercase mb-6 flex items-center gap-2 tracking-widest"><Settings size={16}/> Fitas e Lucros</h3>
+              <div className="space-y-4">
+                {[
+                  { label: 'Fita de Borda 22mm (Metro)', key: 'edge22Price' },
+                  { label: 'Fita de Borda 35mm (Metro)', key: 'edge35Price' },
+                  { label: 'Mão de Obra (%)', key: 'laborPercentage' },
+                  { label: 'Margem de Lucro (%)', key: 'profitMargin' },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label className="text-[8px] text-gray-500 uppercase block mb-1 font-black">{f.label}</label>
+                    <input type="number" value={(settings as any)[f.key]} onChange={e => setSettings({...settings, [f.key]: Number(e.target.value)})} className="w-full bg-[#041c32] border border-[#be841c]/10 rounded-xl p-3 text-sm text-white outline-none" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ABA MÓDULOS DO PROJETO */}
+        {activeTab === 'project' && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="bg-[#062642] rounded-[2rem] border border-[#be841c]/10 overflow-hidden shadow-2xl">
+              <div className="p-6 bg-[#082d4f]/50 flex justify-between items-center border-b border-[#be841c]/10">
+                <h2 className="text-[10px] font-black uppercase tracking-widest text-[#be841c]">Listagem de Móveis</h2>
+                <button onClick={addItem} className="bg-[#be841c] text-[#041c32] px-6 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 hover:scale-105 transition-all"><Plus size={16} /> Adicionar Móvel</button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[11px]">
+                  <thead className="bg-[#041c32] text-[#be841c]">
+                    <tr className="uppercase font-black tracking-widest border-b border-[#be841c]/10">
+                      <th className="p-5">Ambiente/Móvel</th>
+                      <th className="p-5">MDF Chapa</th>
+                      <th className="p-5">Fita Metro</th>
+                      <th className="p-5">Ferragens</th>
+                      <th className="p-5">Fundo</th>
+                      <th className="p-5">Qtd</th>
+                      <th className="p-5"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#be841c]/5">
+                    {items.map(item => (
+                      <tr key={item.id} className="hover:bg-white/5 transition-colors">
+                        <td className="p-5">
+                          <input type="text" value={item.description} onChange={e => updateItem(item.id, 'description', e.target.value)} className="bg-transparent border-none focus:ring-0 text-white w-full font-bold" placeholder="Ex: Armário Cozinha" />
+                        </td>
+                        <td className="p-5">
+                          <div className="flex flex-col gap-1">
+                            <select value={item.mdfType} onChange={e => updateItem(item.id, 'mdfType', e.target.value)} className="bg-[#041c32] border-none text-[9px] p-1 rounded-lg text-[#be841c] font-black">
+                              <option value="white">BRANCO TX</option>
+                              <option value="color">COR/AMAD</option>
+                            </select>
+                            <input type="number" step="0.1" value={item.mdfSheets} onChange={e => updateItem(item.id, 'mdfSheets', Number(e.target.value))} className="bg-[#041c32] border border-[#be841c]/10 rounded-lg p-1.5 w-full text-center" />
+                          </div>
+                        </td>
+                        <td className="p-5">
+                          <div className="flex flex-col gap-1">
+                            <select value={item.edgeType} onChange={e => updateItem(item.id, 'edgeType', e.target.value)} className="bg-[#041c32] border-none text-[9px] p-1 rounded-lg">
+                              <option value="22mm">22mm</option>
+                              <option value="35mm">35mm</option>
+                            </select>
+                            <input type="number" value={item.edgeMeters} onChange={e => updateItem(item.id, 'edgeMeters', Number(e.target.value))} className="bg-[#041c32] border border-[#be841c]/10 rounded-lg p-1.5 w-full text-center" />
+                          </div>
+                        </td>
+                        <td className="p-5">
+                          <div className="flex flex-col gap-2">
+                             <div className="flex items-center justify-between gap-1 text-[8px] text-gray-500 font-bold">
+                               DOBR: <input type="number" value={item.hinges} onChange={e => updateItem(item.id, 'hinges', Number(e.target.value))} className="bg-[#041c32] w-8 text-center rounded p-0.5" />
+                             </div>
+                             <div className="flex items-center justify-between gap-1 text-[8px] text-gray-500 font-bold">
+                               CORR: <input type="number" value={item.slides} onChange={e => updateItem(item.id, 'slides', Number(e.target.value))} className="bg-[#041c32] w-8 text-center rounded p-0.5" />
+                             </div>
+                          </div>
+                        </td>
+                        <td className="p-5">
+                          <div className="flex flex-col gap-1">
+                            <select value={item.backType} onChange={e => updateItem(item.id, 'backType', e.target.value)} className="bg-[#041c32] border-none text-[9px] p-1 rounded-lg">
+                              <option value="3mm">3mm</option>
+                              <option value="6mm">6mm</option>
+                            </select>
+                            <input type="number" step="0.1" value={item.backSheets} onChange={e => updateItem(item.id, 'backSheets', Number(e.target.value))} className="bg-[#041c32] border border-[#be841c]/10 rounded-lg p-1.5 w-full text-center" />
+                          </div>
+                        </td>
+                        <td className="p-5">
+                          <input type="number" value={item.quantity} onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))} className="bg-[#be841c] text-[#041c32] border-none rounded-lg p-2 w-10 text-center font-black" />
+                        </td>
+                        <td className="p-5">
+                          <button onClick={() => setItems(items.filter(i => i.id !== item.id))} className="text-gray-600 hover:text-red-400"><Trash2 size={16} /></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ABA ITENS EXTRAS */}
+        {activeTab === 'extras' && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+             <div className="bg-[#062642] rounded-[2rem] border border-[#be841c]/10 overflow-hidden shadow-2xl">
+              <div className="p-6 bg-[#082d4f]/50 flex justify-between items-center border-b border-[#be841c]/10">
+                <h2 className="text-[10px] font-black uppercase tracking-widest text-[#be841c]">Espelhos, Metalon, Estofados, etc.</h2>
+                <button onClick={addExtra} className="bg-[#be841c] text-[#041c32] px-6 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 hover:scale-105 transition-all"><Plus size={16} /> Novo Extra</button>
+              </div>
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {extras.map(extra => (
+                  <div key={extra.id} className="bg-[#041c32] p-4 rounded-2xl border border-[#be841c]/20 relative group shadow-lg">
+                    <button onClick={() => setExtras(extras.filter(x => x.id !== extra.id))} className="absolute top-2 right-2 text-gray-700 hover:text-red-400"><Trash2 size={16} /></button>
+                    <div className="space-y-3">
+                      <input type="text" value={extra.description} onChange={e => setExtras(extras.map(x => x.id === extra.id ? {...x, description: e.target.value} : x))} className="bg-transparent border-none p-0 text-white font-black text-xs w-full outline-none" placeholder="Ex: Espelho Bronze 4mm" />
+                      <div className="grid grid-cols-2 gap-2">
+                         <div>
+                          <label className="text-[8px] text-gray-500 uppercase block mb-1 font-bold">R$ Preço</label>
+                          <input type="number" value={extra.price} onChange={e => setExtras(extras.map(x => x.id === extra.id ? {...x, price: Number(e.target.value)} : x))} className="bg-[#062642] border border-[#be841c]/10 rounded-lg p-2 w-full text-xs text-[#be841c] font-black" />
+                         </div>
+                         <div>
+                          <label className="text-[8px] text-gray-500 uppercase block mb-1 font-bold">Qtd</label>
+                          <input type="number" value={extra.quantity} onChange={e => setExtras(extras.map(x => x.id === extra.id ? {...x, quantity: Number(e.target.value)} : x))} className="bg-[#062642] border border-[#be841c]/10 rounded-lg p-2 w-full text-xs text-white" />
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* FOOTER FIXO COM RESUMO TOTAL */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-[#062642] border-t-4 border-[#be841c] p-4 md:p-6 no-print shadow-[0_-10px_40px_rgba(0,0,0,0.6)] z-50">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex gap-4 md:gap-8 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
+             <div className="min-w-fit">
+              <span className="text-[8px] text-[#be841c] block uppercase font-black tracking-widest mb-1">Materiais</span>
+              <p className="font-black text-white text-xs md:text-sm">R$ {totals.materialCost.toLocaleString('pt-BR')}</p>
+             </div>
+             <div className="min-w-fit">
+              <span className="text-[8px] text-[#be841c] block uppercase font-black tracking-widest mb-1">Mão de Obra</span>
+              <p className="font-black text-white text-xs md:text-sm">R$ {totals.laborValue.toLocaleString('pt-BR')}</p>
+             </div>
+             <div className="min-w-fit">
+              <span className="text-[8px] text-[#be841c] block uppercase font-black tracking-widest mb-1">Extras</span>
+              <p className="font-black text-white text-xs md:text-sm">R$ {totals.extrasTotal.toLocaleString('pt-BR')}</p>
+             </div>
+             <div className="min-w-fit">
+              <span className="text-[8px] text-[#be841c] block uppercase font-black tracking-widest mb-1">Valor Total</span>
+              <p className="text-lg md:text-2xl font-black text-[#be841c]">R$ {totals.finalTotal.toLocaleString('pt-BR')}</p>
+             </div>
+          </div>
+          <button onClick={handlePrint} className="w-full md:w-auto bg-[#be841c] text-[#041c32] px-8 py-4 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-white transition-all shadow-xl active:scale-95 group">
+            <Printer size={20} className="group-hover:rotate-12 transition-transform" /> Gerar Orçamento
+          </button>
+        </div>
       </footer>
 
+      {/* ÁREA DE IMPRESSÃO (ESTILO PAPEL TIMBRADO) */}
+      <div className="hidden print-block p-10 bg-white text-black min-h-screen font-serif">
+        <div className="border-[8px] border-double border-gray-200 p-8">
+          {/* Cabeçalho Proposta */}
+          <div className="flex justify-between items-center border-b-4 border-gray-900 pb-8 mb-8">
+            <div className="flex items-center gap-4">
+              <Home size={60} className="text-gray-900" />
+              <div>
+                <h1 className="text-4xl font-black uppercase tracking-tighter leading-none">Irmãos Silva</h1>
+                <h2 className="text-xl text-gray-600 uppercase tracking-widest font-light">Móveis Planejados</h2>
+              </div>
+            </div>
+            <div className="text-right text-[10px] uppercase font-bold leading-relaxed">
+              <p>Móveis sob medida e alto padrão</p>
+              <p>WhatsApp: (00) 00000-0000</p>
+              <p>Data: {client.date}</p>
+            </div>
+          </div>
+
+          {/* Dados do Cliente */}
+          <div className="mb-10 bg-gray-50 p-6 rounded-2xl border border-gray-200">
+            <h3 className="text-lg font-black uppercase border-b border-gray-300 mb-4 pb-1 tracking-widest">Proposta para Cliente</h3>
+            <div className="grid grid-cols-2 gap-y-4 text-[12px]">
+              <p><span className="font-black uppercase">Projeto:</span> {client.projectTitle || 'ORÇAMENTO DE MARCENARIA'}</p>
+              <p><span className="font-black uppercase">Cliente:</span> {client.name || 'NÃO INFORMADO'}</p>
+              <p><span className="font-black uppercase">Telefone:</span> {client.phone || '-'}</p>
+              <p><span className="font-black uppercase">Local:</span> {client.address || '-'}</p>
+            </div>
+          </div>
+
+          {/* Tabela de Itens (Módulos) */}
+          <div className="mb-8">
+            <h3 className="text-xs font-black uppercase bg-gray-900 text-white px-4 py-2 mb-4 tracking-widest">Descrição Técnica dos Módulos</h3>
+            <table className="w-full text-[11px] border-collapse">
+              <thead>
+                <tr className="border-b-2 border-gray-900 text-left uppercase">
+                  <th className="py-2">Item/Ambiente</th>
+                  <th className="py-2">Especificação de Material</th>
+                  <th className="py-2 text-center">Qtd</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {items.map(item => (
+                  <tr key={item.id}>
+                    <td className="py-4 font-black uppercase">{item.description}</td>
+                    <td className="py-4 italic">
+                      MDF {item.mdfType === 'white' ? 'BRANCO TX' : 'COR/AMADEIRADO'} | 
+                      Fundo {item.backType} | 
+                      {item.hinges} Dobr. | {item.slides} Corr.
+                    </td>
+                    <td className="py-4 text-center font-black">{item.quantity}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Extras */}
+          {extras.length > 0 && (
+            <div className="mb-10">
+              <h3 className="text-xs font-black uppercase bg-gray-100 px-4 py-2 mb-4 tracking-widest">Itens Complementares (Vidros/Outros)</h3>
+              <table className="w-full text-[11px]">
+                <tbody className="divide-y divide-gray-100">
+                  {extras.map(extra => (
+                    <tr key={extra.id}>
+                      <td className="py-2 font-black uppercase">{extra.description}</td>
+                      <td className="py-2 text-right">{extra.quantity} Unid.</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Resumo Final e Assinaturas */}
+          <div className="mt-16 pt-8 border-t-2 border-gray-900">
+            <div className="flex justify-between items-end">
+              <div className="text-[8px] text-gray-500 max-w-sm uppercase leading-relaxed font-bold italic">
+                <p>* Proposta válida por 10 dias.</p>
+                <p>* Prazos de entrega contados após medição técnica final.</p>
+                <p>* Granitos, cubas e eletros não inclusos.</p>
+              </div>
+              <div className="text-right">
+                 <p className="text-[10px] uppercase font-black text-gray-400 mb-1 tracking-widest">Total do Investimento</p>
+                 <p className="text-4xl font-black border-b-4 border-gray-900 pb-2">R$ {totals.finalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-24 flex justify-between gap-16">
+            <div className="flex-1 border-t border-gray-400 pt-2 text-center text-[9px] uppercase font-bold">
+              Responsável (Irmãos Silva Planejados)
+            </div>
+            <div className="flex-1 border-t border-gray-400 pt-2 text-center text-[9px] uppercase font-bold">
+              Aceite do Cliente ({client.name || 'Assinatura'})
+            </div>
+          </div>
+        </div>
+      </div>
+
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@300;400;600;900&display=swap');
-        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
-        h1 { font-family: 'Playfair Display', serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@900&family=Inter:wght@300;400;700;900&display=swap');
         
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        h1, h2 { font-family: 'Playfair Display', serif; }
+
         @media print {
           .no-print { display: none !important; }
-          body { background: white !important; color: black !important; padding: 0 !important; }
-          .bg-[#062642], .bg-[#082d4f], .bg-[#041c32] { background: white !important; color: black !important; border: 1px solid #ddd !important; }
-          .text-white, .text-[#be841c], .text-gray-100 { color: black !important; }
-          .lg\\:col-span-8 { width: 100% !important; grid-column: span 12 / span 12 !important; }
-          input { color: black !important; font-weight: bold !important; border: none !important; }
-          table { border-collapse: collapse !important; width: 100% !important; }
-          th, td { border-bottom: 1px solid #eee !important; padding: 10px !important; }
-          .bg-gradient-to-br { background: #f3f4f6 !important; border: 2px solid black !important; }
+          .print-block { display: block !important; }
+          body { background: white !important; padding: 0 !important; }
+          @page { margin: 1cm; size: A4; }
+        }
+
+        .animate-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
         }
       `}</style>
     </div>
